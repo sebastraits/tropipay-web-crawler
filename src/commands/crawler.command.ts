@@ -6,6 +6,7 @@ import { promises as fs } from 'fs';
 const EXCLUDE_SCRIPTS = true;
 const EXCLUDED_HREFS = ['/', '#'];
 const SIMULTANEOUS_REQUESTS = 100;
+const TEXT_SEPARATOR = ', ';
 
 const NO_URL_MSG = 'The --url parameter is mandatory.';
 const INVALID_URL_MSG = 'The --url parameter is not a valid URL.';
@@ -13,7 +14,6 @@ const INVALID_MAXDIST_MSG = 'The --maxdist parameter must be greater than 0.';
 
 const DEFAULT_MAXDIST = 1;
 const DEFAULT_DB_NAME = 'crawler.db';
-const TEXT_SEPARATOR = ', ';
 
 const EXCLUDE_REGEXS_FROM_TEXT: RegExp[] = [/\([^0-9]*\d+[0-9]*\)/g]; // Numbers in parentheses
 
@@ -32,10 +32,6 @@ interface IprocessedPage {
 
 @Command({ name: 'crawler', description: 'A web crawler' })
 export class CrawlerCommand extends CommandRunner {
-  constructor() {
-    super();
-  }
-
   async run(passedParam: string[], options: IOptions): Promise<void> {
     const { url, maxdist, db } = options;
 
@@ -100,7 +96,10 @@ export class CrawlerCommand extends CommandRunner {
       console.log(`Crawling level ${currentLevel} of ${maxdist}`);
       const newUrlsToVisit: string[] = [];
 
-      const chunksOfUrls = this.chunkArray(urlsToVisit, SIMULTANEOUS_REQUESTS);
+      const chunksOfUrls: string[][] = this.chunkArray(
+        urlsToVisit,
+        SIMULTANEOUS_REQUESTS,
+      );
       const totalChunks = chunksOfUrls.length;
       let chunkNumber = 1;
       for (const chunk of chunksOfUrls) {
@@ -132,7 +131,7 @@ export class CrawlerCommand extends CommandRunner {
       urlsToVisit = newUrlsToVisit;
       currentLevel++;
     }
-    this.writeFile(dbName, JSON.stringify(result));
+    await this.writeFile(dbName, JSON.stringify(result));
   }
 
   // TOOLS
@@ -181,11 +180,9 @@ export class CrawlerCommand extends CommandRunner {
           !EXCLUDED_HREFS.includes(href) &&
           !href.startsWith('mailto')
         ) {
-          const formatedUrl = this.normalizeHref(mainUrl, href);
-          const normalizeUrlWWW = this.normalizeUrlWWW(formatedUrl);
-          const finalUrl = this.deleteParamsFromUrl(normalizeUrlWWW);
-          if (finalUrl.startsWith(mainUrl)) {
-            this.pushUnique(findedUrls, finalUrl);
+          const normalizedUrl = this.processHrefValue(mainUrl, href);
+          if (normalizedUrl.startsWith(mainUrl)) {
+            this.pushUnique(findedUrls, normalizedUrl);
           }
         }
       }
@@ -221,7 +218,7 @@ export class CrawlerCommand extends CommandRunner {
     }
   }
 
-  chunkArray(arr, chunkSize) {
+  chunkArray(arr, chunkSize): string[][] {
     const chunks = [];
     for (let i = 0; i < arr.length; i += chunkSize) {
       chunks.push(arr.slice(i, i + chunkSize));
@@ -229,7 +226,14 @@ export class CrawlerCommand extends CommandRunner {
     return chunks;
   }
 
-  normalizeHref(mainUrl: string, href: string): string {
+  processHrefValue(mainUrl: string, href: string): string {
+    href = this.addHttpIfMissing(mainUrl, href);
+    href = this.addWWWIfMissing(href);
+    href = this.deleteParamsFromUrl(href);
+    return href;
+  }
+
+  addHttpIfMissing(mainUrl: string, href: string): string {
     if (href.startsWith('http')) {
       return href;
     } else if (href.startsWith('/') && mainUrl.endsWith('/')) {
@@ -249,7 +253,7 @@ export class CrawlerCommand extends CommandRunner {
     }
   }
 
-  normalizeUrlWWW(url: string): string {
+  addWWWIfMissing(url: string): string {
     if (url.includes('www.')) {
       return url;
     } else {
