@@ -7,6 +7,7 @@ const EXCLUDE_SCRIPTS = true; // Here you declare if you want to exclude the scr
 const EXCLUDED_HREFS = ['/', '#']; // Here you declare the hrefs that you want to exclude from the crawler
 const SIMULTANEOUS_REQUESTS = 100; // Here you declare the number of simultaneous requests to the URLs
 const TEXT_SEPARATOR = ', '; // Here you declare the separator for the texts captured from the pages
+const PARAGRAPHS_OR_WORDS: 'words' | 'paragraphs' = 'words'; // Here you declare if you want to store the paragraphs or the words of the texts captured
 
 const NO_URL_MSG = 'The --url parameter is mandatory.'; // Here you declare the error message that will be displayed when the --url parameter does not exist.
 const INVALID_URL_MSG = 'The --url parameter is not a valid URL.'; // Here you declare the error message that will be displayed when the --url parameter is not a valid URL.
@@ -180,17 +181,27 @@ export class CrawlerCommand extends CommandRunner {
         // Here we check if the element is a title
         pageTitle = $(element).text();
       } else {
-        const innerText = $(element).clone().children().remove().end().text(); // Here we get the inner text of the element
-        let trimedInnerText = innerText.trim(); // Here we trim the inner text
-        if (EXCLUDE_REGEXS_FROM_TEXT.length > 0) {
-          // Here we check if there are regexs to exclude from the text
-          for (const re of EXCLUDE_REGEXS_FROM_TEXT) {
-            trimedInnerText = trimedInnerText.replaceAll(re, ''); // Here we replace the regexs with an empty string
-          }
+        let innerText = $(element).clone().children().remove().end().text(); // Here we get the inner text of the element
+        innerText = innerText.trim(); // Here we trim the inner text
+        // Here we check if there are regexs to exclude from the text
+        for (const re of EXCLUDE_REGEXS_FROM_TEXT) {
+          innerText = innerText.replaceAll(re, ''); // Here we replace the regexs with an empty string
         }
-        if (trimedInnerText) {
+        if (innerText) {
           // Here we check if the inner text is not empty
-          this.pushUnique(findedText, trimedInnerText); // Here we add the inner text to the finded text
+          if (PARAGRAPHS_OR_WORDS === 'paragraphs') {
+            this.pushUnique(findedText, innerText); // Here we add the inner text to the finded text
+          } else {
+            const words = innerText.split(' '); // Here we split the inner text in words
+            const utfWordsRegex =
+              /^[^\u0000-\u0040\u005B-\u0060\u007B-\u00BF\u02B0-\u036F\u00D7\u00F7\u2000-\u2BFF]+$/; // Here we declare the regex to check if a word is UTF-8
+            for (const word of words) {
+              // Here we iterate through the words
+              if (word && utfWordsRegex.test(word)) {
+                this.pushUnique(findedText, word); // Here we add the word to the finded text
+              }
+            }
+          }
         }
       }
       if ($(element).is('a')) {
