@@ -3,19 +3,19 @@ import * as cheerio from 'cheerio';
 import { Command, CommandRunner, Option } from 'nest-commander';
 import { promises as fs } from 'fs';
 
-const EXCLUDE_SCRIPTS = true;
-const EXCLUDED_HREFS = ['/', '#'];
-const SIMULTANEOUS_REQUESTS = 100;
-const TEXT_SEPARATOR = ', ';
+const EXCLUDE_SCRIPTS = true; // Here you declare if you want to exclude the scripts from the text captured
+const EXCLUDED_HREFS = ['/', '#']; // Here you declare the hrefs that you want to exclude from the crawler
+const SIMULTANEOUS_REQUESTS = 100; // Here you declare the number of simultaneous requests to the URLs
+const TEXT_SEPARATOR = ', '; // Here you declare the separator for the texts captured from the pages
 
-const NO_URL_MSG = 'The --url parameter is mandatory.';
-const INVALID_URL_MSG = 'The --url parameter is not a valid URL.';
-const INVALID_MAXDIST_MSG = 'The --maxdist parameter must be greater than 0.';
+const NO_URL_MSG = 'The --url parameter is mandatory.'; // Here you declare the error message that will be displayed when the --url parameter does not exist.
+const INVALID_URL_MSG = 'The --url parameter is not a valid URL.'; // Here you declare the error message that will be displayed when the --url parameter is not a valid URL.
+const INVALID_MAXDIST_MSG = 'The --maxdist parameter must be greater than 0.'; // Here you declare the error message that will be displayed when the --maxdist parameter is not a valid number.
 
-const DEFAULT_MAXDIST = 1;
-const DEFAULT_DB_NAME = 'crawler.db';
+const DEFAULT_MAXDIST = 1; // Here you declare the default value for the --maxdist parameter.
+const DEFAULT_DB_NAME = 'crawler.JSON'; // Here you declare the default value for the --db parameter.
 
-const EXCLUDE_REGEXS_FROM_TEXT: RegExp[] = [/\([^0-9]*\d+[0-9]*\)/g]; // Numbers in parentheses
+const EXCLUDE_REGEXS_FROM_TEXT: RegExp[] = [/\([^0-9]*\d+[0-9]*\)/g]; // Here you declare the regexs that you want to exclude from the text captured
 
 interface IOptions {
   url: string;
@@ -78,7 +78,11 @@ export class CrawlerCommand extends CommandRunner {
     description: 'File name for the database',
   })
   parseDb(val: string): string {
-    return val;
+    if (!val.endsWith('.JSON')) {
+      return val + '.JSON';
+    } else {
+      return val;
+    }
   }
 
   async runCrawler(
@@ -86,108 +90,128 @@ export class CrawlerCommand extends CommandRunner {
     maxdist: number,
     dbName: string,
   ): Promise<void> {
-    let currentLevel: number = 1;
-    const visitedUrls: string[] = [];
-    let urlsToVisit: string[] = [mainUrl];
-    const result = {};
-    let autoincrmentId: number = 1;
+    let currentLevel: number = 1; // Here we store the current level of the crawler
+    const visitedUrls: string[] = []; // Here we store the visited URLs
+    let urlsToVisit: string[] = [mainUrl]; // Here we store the URLs to visit
+
+    const stackedOutput = {}; // Here we build the output object
+    let autoincrmentId: number = 1; // Here we store the autoincrement ID for the output object
 
     while (currentLevel <= maxdist) {
+      // Here we iterate through the levels of the crawler
+      console.log('*****************************');
       console.log(`Crawling level ${currentLevel} of ${maxdist}`);
-      const newUrlsToVisit: string[] = [];
+      console.log('*****************************');
 
       const chunksOfUrls: string[][] = this.chunkArray(
+        // Here we split the URLs to visit in chunks of SIMULTANEOUS_REQUESTS
         urlsToVisit,
         SIMULTANEOUS_REQUESTS,
       );
-      const totalChunks = chunksOfUrls.length;
-      let chunkNumber = 1;
+      const totalChunks = chunksOfUrls.length; // Here we store the total number of chunks
+      let chunkNumber = 1; // Here we store the current chunk number
+      const newUrlsToVisit: string[] = []; // Here we store the new URLs to visit
       for (const chunk of chunksOfUrls) {
+        // Here we iterate through the chunks
         console.log(
           `Processing block ${chunkNumber} of ${totalChunks}... (Pages in block: ${chunk.length}))`,
         );
-        chunkNumber++;
-        const promises = chunk.map((url) => this.processPage(mainUrl, url));
-        const allPromises = await Promise.all(promises);
+        const promises = chunk.map((url) => this.processPage(mainUrl, url)); // Here we create an array of promises
+        const allPromises = await Promise.all(promises); // Here we wait for all the promises to be resolved
         for (const pr of allPromises) {
+          // Here we iterate through the promises
           if (!pr) {
             continue;
           }
-          result[autoincrmentId] = {
+          stackedOutput[autoincrmentId] = {
+            // Here we build the output object
             url: pr.url,
             title: pr.title,
             texts: pr.texts,
           };
-          autoincrmentId++;
-          visitedUrls.push(pr.url);
+          autoincrmentId++; // Here we increment the autoincrement ID
+          visitedUrls.push(pr.url); // Here we add the URL to the visited URLs
           for (const link of pr.links) {
+            // Here we iterate through the finded links of the page
             if (!visitedUrls.includes(link) && !newUrlsToVisit.includes(link)) {
-              newUrlsToVisit.push(link);
+              // Here we check if the link is not in the visited URLs and not in the new URLs to visit
+              newUrlsToVisit.push(link); // Here we add the link to the new URLs to visit
             }
           }
         }
+        chunkNumber++; // Here we increment the chunk number
       }
 
-      urlsToVisit = newUrlsToVisit;
-      currentLevel++;
+      urlsToVisit = newUrlsToVisit; // Here we update the URLs to visit
+      currentLevel++; // Here we increment the current level
     }
-    await this.writeFile(dbName, JSON.stringify(result));
+    await this.writeFile(dbName, JSON.stringify(stackedOutput)); // Here we save the output object to a file
   }
 
   // TOOLS
 
   validateUrl(url: string): boolean {
+    // Here we validate if the URL is valid
     const regex =
       /^(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|]/i;
     return regex.test(url);
   }
 
   async processPage(mainUrl: string, url: string): Promise<IprocessedPage> {
-    let pageTitle: string = '';
-    const findedUrls: string[] = [];
-    const findedText: string[] = [];
+    let pageTitle: string = ''; // Here we store the page title
+    const findedUrls: string[] = []; // Here we store the finded URLs
+    const findedText: string[] = []; // Here we store the finded text
 
-    const htmlContent = await this.extractUrl(url);
+    const htmlContent = await this.extractUrl(url); // Here we extract the HTML content from the URL
     if (!htmlContent) {
+      // Here we check if the HTML content exists
       return null;
     }
-    const $ = cheerio.load(htmlContent);
+    const $ = cheerio.load(htmlContent); // Here we load the HTML content into cheerio
     $('*').each((index, element) => {
+      // Here we iterate through the elements of the page
       if (
-        EXCLUDE_SCRIPTS &&
+        EXCLUDE_SCRIPTS && // Here we check if the element is a script or noscript
         ($(element).is('script') || $(element).is('noscript'))
       ) {
         return;
       }
       if ($(element).is('title')) {
+        // Here we check if the element is a title
         pageTitle = $(element).text();
       } else {
-        const innerText = $(element).clone().children().remove().end().text();
-        let trimedInnerText = innerText.trim();
+        const innerText = $(element).clone().children().remove().end().text(); // Here we get the inner text of the element
+        let trimedInnerText = innerText.trim(); // Here we trim the inner text
         if (EXCLUDE_REGEXS_FROM_TEXT.length > 0) {
+          // Here we check if there are regexs to exclude from the text
           for (const re of EXCLUDE_REGEXS_FROM_TEXT) {
-            trimedInnerText = trimedInnerText.replaceAll(re, '');
+            trimedInnerText = trimedInnerText.replaceAll(re, ''); // Here we replace the regexs with an empty string
           }
         }
         if (trimedInnerText) {
-          this.pushUnique(findedText, trimedInnerText);
+          // Here we check if the inner text is not empty
+          this.pushUnique(findedText, trimedInnerText); // Here we add the inner text to the finded text
         }
       }
       if ($(element).is('a')) {
-        const href = $(element).attr('href');
+        // Here we check if the element is a link
+        const href = $(element).attr('href'); // Here we get the href value of the link
         if (
+          // Here we check if the href value is not empty and is not in the excluded hrefs
           href &&
           !EXCLUDED_HREFS.includes(href) &&
-          !href.startsWith('mailto')
+          !href.startsWith('mailto') // Here we check if the href value is not a mailto
         ) {
-          const normalizedUrl = this.processHrefValue(mainUrl, href);
+          const normalizedUrl = this.processHrefValue(mainUrl, href); // Here we process the href value
           if (normalizedUrl.startsWith(mainUrl)) {
-            this.pushUnique(findedUrls, normalizedUrl);
+            // Here we check if the href value starts with the main URL
+            this.pushUnique(findedUrls, normalizedUrl); // Here we add the href value to the finded URLs
           }
         }
       }
     });
     return {
+      // Here we return the processed page
       url: url,
       title: pageTitle,
       texts: findedText.join(TEXT_SEPARATOR),
@@ -213,12 +237,14 @@ export class CrawlerCommand extends CommandRunner {
   }
 
   pushUnique(arr, item) {
+    // Here we add an item to an array if it does not exist
     if (!arr.includes(item)) {
       arr.push(item);
     }
   }
 
   chunkArray(arr, chunkSize): string[][] {
+    // Here we split an array in chunks
     const chunks = [];
     for (let i = 0; i < arr.length; i += chunkSize) {
       chunks.push(arr.slice(i, i + chunkSize));
@@ -227,6 +253,7 @@ export class CrawlerCommand extends CommandRunner {
   }
 
   processHrefValue(mainUrl: string, href: string): string {
+    // Here we process the href value
     href = this.addHttpIfMissing(mainUrl, href);
     href = this.addWWWIfMissing(href);
     href = this.deleteParamsFromUrl(href);
@@ -234,6 +261,7 @@ export class CrawlerCommand extends CommandRunner {
   }
 
   addHttpIfMissing(mainUrl: string, href: string): string {
+    // Here we complete the urls if they are incomplete.
     if (href.startsWith('http')) {
       return href;
     } else if (href.startsWith('/') && mainUrl.endsWith('/')) {
@@ -246,6 +274,7 @@ export class CrawlerCommand extends CommandRunner {
   }
 
   deleteParamsFromUrl(url: string): string {
+    // Here we delete the params from the URL
     if (url.includes('?')) {
       return url.substring(0, url.indexOf('?'));
     } else {
@@ -254,6 +283,7 @@ export class CrawlerCommand extends CommandRunner {
   }
 
   addWWWIfMissing(url: string): string {
+    // Here we add the www if it is missing
     if (url.includes('www.')) {
       return url;
     } else {
@@ -262,6 +292,7 @@ export class CrawlerCommand extends CommandRunner {
   }
 
   async writeFile(filePath: string, jsonString: string) {
+    // Here we save the JSON data to a file
     console.log('Saving JSON data to file...');
     try {
       await fs.writeFile(filePath, jsonString);
