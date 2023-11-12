@@ -8,6 +8,7 @@ const EXCLUDED_HREFS = ['/', '#']; // Here you declare the hrefs that you want t
 const SIMULTANEOUS_REQUESTS = 100; // Here you declare the number of simultaneous requests to the URLs
 const TEXT_SEPARATOR = ', '; // Here you declare the separator for the texts captured from the pages
 const PARAGRAPHS_OR_WORDS: 'words' | 'paragraphs' = 'words'; // Here you declare if you want to store the paragraphs or the words of the texts captured
+const EXCLUDE_REGEXS_FROM_TEXT: RegExp[] = [/\([^0-9]*\d+[0-9]*\)/g]; // Here you declare the regexs that you want to exclude from the text captured
 
 const NO_URL_MSG = 'The --url parameter is mandatory.'; // Here you declare the error message that will be displayed when the --url parameter does not exist.
 const INVALID_URL_MSG = 'The --url parameter is not a valid URL.'; // Here you declare the error message that will be displayed when the --url parameter is not a valid URL.
@@ -16,12 +17,11 @@ const INVALID_MAXDIST_MSG = 'The --maxdist parameter must be greater than 0.'; /
 const DEFAULT_MAXDIST = 1; // Here you declare the default value for the --maxdist parameter.
 const DEFAULT_DB_NAME = 'crawler.JSON'; // Here you declare the default value for the --db parameter.
 
-const EXCLUDE_REGEXS_FROM_TEXT: RegExp[] = [/\([^0-9]*\d+[0-9]*\)/g]; // Here you declare the regexs that you want to exclude from the text captured
-
 interface IOptions {
   url: string;
   maxdist?: number;
   db?: string;
+  help?: boolean;
 }
 
 interface IprocessedPage {
@@ -34,7 +34,11 @@ interface IprocessedPage {
 @Command({ name: 'crawler', description: 'A web crawler' })
 export class CrawlerCommand extends CommandRunner {
   async run(passedParam: string[], options: IOptions): Promise<void> {
-    const { url, maxdist, db } = options;
+    const { url, maxdist, db, help } = options;
+
+    if (help) {
+      return;
+    }
 
     if (!url) {
       console.log(NO_URL_MSG);
@@ -86,6 +90,22 @@ export class CrawlerCommand extends CommandRunner {
     }
   }
 
+  @Option({
+    flags: '-h, --help',
+    description: 'Show help message',
+  })
+  showHelp() {
+    console.log(`
+      Usage: crawler [options]
+
+      Options:
+        -u, --url [string]          URL to crawl
+        -m, --maxdist [number]      Maximum distance to crawl from the root URL
+        -d, --db [string]           File name for the database
+        -h, --help                  Show this help message
+    `);
+  }
+
   async runCrawler(
     mainUrl: string,
     maxdist: number,
@@ -100,9 +120,8 @@ export class CrawlerCommand extends CommandRunner {
 
     while (currentLevel <= maxdist) {
       // Here we iterate through the levels of the crawler
-      console.log('*****************************');
       console.log(`Crawling level ${currentLevel} of ${maxdist}`);
-      console.log('*****************************');
+      console.log('-------------------------------');
 
       const chunksOfUrls: string[][] = this.chunkArray(
         // Here we split the URLs to visit in chunks of SIMULTANEOUS_REQUESTS
@@ -115,7 +134,7 @@ export class CrawlerCommand extends CommandRunner {
       for (const chunk of chunksOfUrls) {
         // Here we iterate through the chunks
         console.log(
-          `Processing block ${chunkNumber} of ${totalChunks}... (Pages in block: ${chunk.length}))`,
+          `     Processing block ${chunkNumber} of ${totalChunks}... (Pages in block: ${chunk.length}))`,
         );
         const promises = chunk.map((url) => this.processPage(mainUrl, url)); // Here we create an array of promises
         const allPromises = await Promise.all(promises); // Here we wait for all the promises to be resolved
