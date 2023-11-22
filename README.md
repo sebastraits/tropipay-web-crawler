@@ -8,7 +8,7 @@ The objective of this challenge is to build the core of a web crawler that will 
 ### Clone the repository
 
 ```bash
-git clone https://github.com/sebastraits/tropipay-web-crawler
+git clone https://github.com/sebastraits/web-crawler
 ```
 
 ### Install dependencies
