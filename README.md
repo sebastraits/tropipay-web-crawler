@@ -1,7 +1,5 @@
 # Web Crawler
-
-TropiPay BackEnd Challenge.
-The objective of this challenge is to build the core of a web crawler that will crawl the websites that are linked to an initial URL
+The web crawler will crawl the websites that are linked to an initial URL
 
 ## Installation
 
